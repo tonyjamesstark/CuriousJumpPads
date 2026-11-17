@@ -1,0 +1,29 @@
+name: CuriousJumpPads
+version: ${project.version}
+main: io.tjs.curiousjumppads.CuriousJumpPadsPlugin
+api-version: '26.2'
+author: tjs
+description: Commands and pads that set player velocity, for launching players across a map
+
+# /launch and /jumppad are registered through Brigadier in CuriousJumpPadsPlugin; see README.md.
+
+permissions:
+  jumppads.*:
+    description: Grants all CuriousJumpPads permissions
+    default: op
+    children:
+      jumppads.launch: true
+      jumppads.admin: true
+      jumppads.use: true
+
+  jumppads.launch:
+    description: Allows /launch
+    default: op
+
+  jumppads.admin:
+    description: Allows /jumppad, to set, remove, list and switch jump pads
+    default: op
+
+  jumppads.use:
+    description: Jump pads launch this player; scope it with LuckPerms contexts (world, region)
+    default: true
