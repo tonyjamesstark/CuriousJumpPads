@@ -1,13 +1,11 @@
 package io.tjs.curiousjumppads.pad;
 
 import io.tjs.curiousjumppads.Launcher;
-import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Tag;
 import org.bukkit.block.Block;
@@ -30,7 +28,6 @@ public final class PadListener implements Listener {
   private final PadStore store;
   private final Launcher launcher;
   private final int cooldownTicks;
-  private final Logger log;
   private final Map<UUID, Integer> lastLaunchTick = new HashMap<>();
 
   /**
@@ -38,43 +35,37 @@ public final class PadListener implements Listener {
    *
    * @param store the pads
    * @param launcher applies a pad's launch
-   * @param cooldownTicks {@code pad-cooldown-ticks}: ticks before the same player can be launched
-   *     again
-   * @param log where failures to save {@code pads.yml} go
+   * @param cooldownTicks {@code pad-cooldown-ticks}: ticks before a pad without its own cooldown
+   *     can launch the same player again
    */
-  public PadListener(PadStore store, Launcher launcher, int cooldownTicks, Logger log) {
+  public PadListener(PadStore store, Launcher launcher, int cooldownTicks) {
     this.store = store;
     this.launcher = launcher;
     this.cooldownTicks = cooldownTicks;
-    this.log = log;
   }
 
   /**
-   * Launches a player who moves into a pad plate or onto a pad block, if pads are on, this pad is
-   * on, the player has {@code jumppads.use} and is past the cooldown.
+   * Launches a player whose feet move into a pad plate's block or onto a pad block, if pads are on,
+   * this pad is on, the player has {@code jumppads.use} and is past the cooldown.
    *
    * @param event any player move
    */
   @EventHandler(ignoreCancelled = true)
   void onMove(PlayerMoveEvent event) {
-    if (!event.hasChangedPosition() || !store.enabled()) {
+    if (!event.hasChangedBlock() || !store.enabled()) {
       return;
     }
     Player player = event.getPlayer();
-    Block feet = event.getTo().getBlock();
-    Pad pad = store.get(BlockKey.of(feet));
-    if (pad == null) {
-      pad = store.get(BlockKey.of(feet.getRelative(BlockFace.DOWN)));
-    }
+    Pad pad = store.padUnder(BlockKey.of(event.getTo().getBlock()));
     if (pad == null || !pad.enabled() || !player.hasPermission("jumppads.use")) {
       return;
     }
     int now = Bukkit.getCurrentTick();
     Integer last = lastLaunchTick.get(player.getUniqueId());
-    if (last != null && now - last < cooldownTicks) {
+    if (last != null && now - last < pad.cooldownTicks().orElse(cooldownTicks)) {
       return;
     }
-    if (launcher.launch(player, pad.spec())) {
+    if (launcher.launch(player, pad.spec()) instanceof Launcher.Outcome.Launched) {
       lastLaunchTick.put(player.getUniqueId(), now);
     }
   }
@@ -122,18 +113,14 @@ public final class PadListener implements Listener {
   }
 
   private boolean forget(List<Block> blocks) {
-    boolean removed = false;
+    List<BlockKey> keys = new ArrayList<>();
     for (Block block : blocks) {
-      try {
-        removed |= store.remove(BlockKey.of(block));
-        Block above = block.getRelative(BlockFace.UP);
-        if (Tag.PRESSURE_PLATES.isTagged(above.getType())) {
-          removed |= store.remove(BlockKey.of(above));
-        }
-      } catch (IOException e) {
-        log.log(Level.WARNING, "Could not save pads.yml", e);
+      keys.add(BlockKey.of(block));
+      Block above = block.getRelative(BlockFace.UP);
+      if (Tag.PRESSURE_PLATES.isTagged(above.getType())) {
+        keys.add(BlockKey.of(above));
       }
     }
-    return removed;
+    return store.removeAll(keys);
   }
 }

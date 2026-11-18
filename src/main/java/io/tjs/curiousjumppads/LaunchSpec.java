@@ -61,7 +61,8 @@ public sealed interface LaunchSpec {
    *
    * @param m the map from {@code pads.yml}
    * @return the launch
-   * @throws IllegalArgumentException if {@code type} is not set, add, forward or to
+   * @throws IllegalArgumentException if {@code type} is not set, add, forward or to, or a field is
+   *     missing
    */
   static LaunchSpec deserialize(Map<?, ?> m) {
     String type = String.valueOf(m.get("type"));
@@ -98,7 +99,10 @@ public sealed interface LaunchSpec {
   }
 
   private static double number(Map<?, ?> m, String key) {
-    return ((Number) m.get(key)).doubleValue();
+    if (m.get(key) instanceof Number n) {
+      return n.doubleValue();
+    }
+    throw new IllegalArgumentException(key + " is not a number");
   }
 
   private static String format(Vector v) {

@@ -69,14 +69,21 @@ public final class Ballistics {
 
   /**
    * The launch velocity that puts the player at {@code delta} from its start after exactly {@code
-   * ticks} ticks, or empty if the player would not be rising at launch and falling on arrival.
+   * ticks} ticks, or empty if it exceeds {@code maxVelocity} on any axis or the player would not be
+   * rising at launch and falling on arrival.
    *
    * @param delta target minus start position, in blocks
    * @param ticks flight time
    * @param onGround whether the player starts on the ground (true costs reach on the first tick)
+   * @param maxVelocity the cap per axis, in blocks per tick
    * @return the launch velocity, or empty
    */
-  public static Optional<Vector> solve(Vector delta, int ticks, boolean onGround) {
+  public static Optional<Vector> solve(
+      Vector delta, int ticks, boolean onGround, double maxVelocity) {
+    return arc(delta, ticks, onGround).filter(v -> withinCap(v, maxVelocity));
+  }
+
+  private static Optional<Vector> arc(Vector delta, int ticks, boolean onGround) {
     // Displacement is linear in the launch velocity: d = v0 * unit + gravityOnly.
     State gravityOnly = simulate(new Vector(), ticks, onGround);
     State unit = simulate(new Vector(1, 1, 1), ticks, onGround);
@@ -104,9 +111,8 @@ public final class Ballistics {
    */
   public static Optional<Vector> solve(Vector delta, boolean onGround, double maxVelocity) {
     for (int ticks = MIN_TICKS; ticks <= MAX_TICKS; ticks++) {
-      Optional<Vector> v0 = solve(delta, ticks, onGround);
+      Optional<Vector> v0 = solve(delta, ticks, onGround, maxVelocity);
       if (v0.isPresent()
-          && withinCap(v0.get(), maxVelocity)
           && simulate(v0.get(), ticks, onGround).apex() >= delta.getY() + CLEARANCE) {
         return v0;
       }

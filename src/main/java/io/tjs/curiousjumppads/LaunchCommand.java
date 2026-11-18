@@ -62,29 +62,13 @@ final class LaunchCommand {
         c.getArgument("targets", PlayerSelectorArgumentResolver.class).resolve(c.getSource());
     int launched = 0;
     for (Player p : targets) {
-      if (launcher.launch(p, spec)) {
-        launched++;
-      } else if (!p.isGliding() && !p.isFlying()) {
-        c.getSource().getSender().sendMessage(unreachable(spec, launcher.maxVelocity()));
+      switch (launcher.launch(p, spec)) {
+        case Launcher.Outcome.Launched _ -> launched++;
+        case Launcher.Outcome.Unreachable u ->
+            c.getSource().getSender().sendMessage(Component.text(u.reason(), NamedTextColor.RED));
+        case Launcher.Outcome.Skipped _ -> {}
       }
     }
     return launched;
-  }
-
-  /**
-   * The error shown when no arc reaches a {@link LaunchSpec.To} target.
-   *
-   * @param spec the launch that failed
-   * @param maxVelocity the configured cap, quoted in the message
-   * @return a red message saying why
-   */
-  static Component unreachable(LaunchSpec spec, double maxVelocity) {
-    String text =
-        spec instanceof LaunchSpec.To t && t.ticks() > 0
-            ? "No arc reaches that point in exactly " + t.ticks() + " ticks."
-            : "Too far for one launch at max-velocity "
-                + maxVelocity
-                + "; chain pads or raise max-velocity.";
-    return Component.text(text, NamedTextColor.RED);
   }
 }

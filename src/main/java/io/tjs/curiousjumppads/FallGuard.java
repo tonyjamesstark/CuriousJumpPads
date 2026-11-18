@@ -18,8 +18,9 @@ final class FallGuard implements Listener {
   /**
    * Creates the guard.
    *
-   * @param enabled {@code cancel-fall-damage}; when false, {@link #guard} does nothing
-   * @param durationMillis how long after a launch the guard stays armed
+   * @param enabled {@code cancel-fall-damage.enabled}; when false, {@link #guard} does nothing
+   * @param durationMillis {@code cancel-fall-damage.timeout-seconds}: how long after a launch the
+   *     guard stays armed
    */
   FallGuard(boolean enabled, long durationMillis) {
     this.enabled = enabled;

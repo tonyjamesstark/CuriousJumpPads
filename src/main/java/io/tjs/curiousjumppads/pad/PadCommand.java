@@ -1,5 +1,10 @@
 package io.tjs.curiousjumppads.pad;
 
+import static com.mojang.brigadier.arguments.IntegerArgumentType.getInteger;
+import static com.mojang.brigadier.arguments.IntegerArgumentType.integer;
+import static com.mojang.brigadier.arguments.StringArgumentType.getString;
+import static com.mojang.brigadier.arguments.StringArgumentType.word;
+
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -10,9 +15,12 @@ import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.MessageComponentSerializer;
 import io.tjs.curiousjumppads.LaunchSpec;
 import io.tjs.curiousjumppads.SpecArguments;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.OptionalInt;
 import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
 import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -48,7 +56,23 @@ public final class PadCommand {
         .then(SpecArguments.addTo(Commands.literal("set"), this::set))
         .then(Commands.literal("remove").executes(this::remove))
         .then(Commands.literal("info").executes(this::info))
-        .then(Commands.literal("list").executes(this::list))
+        .then(
+            Commands.literal("list")
+                .executes(c -> list(c, null))
+                .then(
+                    Commands.argument("world", word())
+                        .suggests(
+                            (c, b) -> {
+                              Bukkit.getWorlds().forEach(w -> b.suggest(w.getName()));
+                              return b.buildFuture();
+                            })
+                        .executes(c -> list(c, getString(c, "world")))))
+        .then(
+            Commands.literal("cooldown")
+                .then(
+                    Commands.argument("ticks", integer(0))
+                        .executes(c -> cooldown(c, OptionalInt.of(getInteger(c, "ticks")))))
+                .then(Commands.literal("default").executes(c -> cooldown(c, OptionalInt.empty()))))
         .then(
             Commands.literal("enable")
                 .executes(c -> toggle(c, true))
@@ -63,52 +87,65 @@ public final class PadCommand {
   private int set(CommandContext<CommandSourceStack> c, LaunchSpec spec)
       throws CommandSyntaxException {
     BlockKey key = BlockKey.of(lookedAt(c));
-    save(() -> store.put(key, new Pad(spec, true)));
+    Pad old = store.get(key);
+    store.put(key, new Pad(spec, true, old == null ? OptionalInt.empty() : old.cooldownTicks()));
     reply(c, "Jump pad at " + key + ": " + spec.describe());
     return Command.SINGLE_SUCCESS;
   }
 
   private int remove(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
     BlockKey key = padKey(c);
-    save(() -> store.remove(key));
+    store.removeAll(List.of(key));
     reply(c, "Removed the jump pad at " + key + ".");
     return Command.SINGLE_SUCCESS;
   }
 
   private int info(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
     BlockKey key = padKey(c);
-    Pad pad = store.get(key);
-    reply(c, key + ": " + pad.spec().describe() + (pad.enabled() ? "" : " (disabled)"));
+    reply(c, key + ": " + store.get(key).describe());
     return Command.SINGLE_SUCCESS;
   }
 
-  private int list(CommandContext<CommandSourceStack> c) {
+  private int list(CommandContext<CommandSourceStack> c, String world) {
+    Map<BlockKey, Pad> pads = new LinkedHashMap<>(store.all());
+    if (world != null) {
+      pads.keySet().removeIf(key -> !key.world().equals(world));
+    }
     CommandSender sender = c.getSource().getSender();
     sender.sendMessage(
-        store.all().size() + " jump pads" + (store.enabled() ? "" : ", all disabled") + ":");
-    store
-        .all()
-        .forEach(
-            (key, pad) ->
-                sender.sendMessage(
-                    " "
-                        + key
-                        + ": "
-                        + pad.spec().describe()
-                        + (pad.enabled() ? "" : " (disabled)")));
-    return store.all().size();
+        pads.size()
+            + " jump pads"
+            + (world == null ? "" : " in " + world)
+            + (store.enabled() ? "" : ", all disabled")
+            + ":");
+    pads.forEach((key, pad) -> sender.sendMessage(" " + key + ": " + pad.describe()));
+    return pads.size();
+  }
+
+  private int cooldown(CommandContext<CommandSourceStack> c, OptionalInt ticks)
+      throws CommandSyntaxException {
+    BlockKey key = padKey(c);
+    store.put(key, store.get(key).withCooldown(ticks));
+    reply(
+        c,
+        "Jump pad at "
+            + key
+            + (ticks.isPresent()
+                ? ": cooldown " + ticks.getAsInt() + " ticks."
+                : ": cooldown back to pad-cooldown-ticks."));
+    return Command.SINGLE_SUCCESS;
   }
 
   private int toggle(CommandContext<CommandSourceStack> c, boolean enabled)
       throws CommandSyntaxException {
     BlockKey key = padKey(c);
-    save(() -> store.put(key, store.get(key).withEnabled(enabled)));
+    store.put(key, store.get(key).withEnabled(enabled));
     reply(c, "Jump pad at " + key + (enabled ? " enabled." : " disabled."));
     return Command.SINGLE_SUCCESS;
   }
 
   private int toggleAll(CommandContext<CommandSourceStack> c, boolean enabled) {
-    save(() -> store.setEnabled(enabled));
+    store.setEnabled(enabled);
     reply(c, enabled ? "All jump pads enabled." : "All jump pads disabled.");
     return Command.SINGLE_SUCCESS;
   }
@@ -131,18 +168,6 @@ public final class PadCommand {
       throw NO_BLOCK.create();
     }
     return block;
-  }
-
-  private interface IoAction {
-    void run() throws IOException;
-  }
-
-  private static void save(IoAction action) {
-    try {
-      action.run();
-    } catch (IOException e) {
-      throw new UncheckedIOException("Could not save pads.yml", e);
-    }
   }
 
   private static void reply(CommandContext<CommandSourceStack> c, String text) {

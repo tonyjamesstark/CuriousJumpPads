@@ -20,18 +20,19 @@ public final class CuriousJumpPadsPlugin extends JavaPlugin {
     saveDefaultConfig();
     FallGuard fallGuard =
         new FallGuard(
-            getConfig().getBoolean("cancel-fall-damage"),
-            getConfig().getLong("fall-guard-seconds") * 1000);
-    Launcher launcher = new Launcher(fallGuard, getConfig().getDouble("max-velocity"));
-    PadStore pads = new PadStore(new File(getDataFolder(), "pads.yml"));
+            getConfig().getBoolean("cancel-fall-damage.enabled"),
+            getConfig().getLong("cancel-fall-damage.timeout-seconds") * 1000);
+    MoveGuard moveGuard = new MoveGuard(getConfig().getBoolean("allow-fast-launches"));
+    Launcher launcher = new Launcher(fallGuard, moveGuard, getConfig().getDouble("max-velocity"));
+    PadStore pads = new PadStore(new File(getDataFolder(), "pads.yml"), getLogger());
     pads.load();
 
     getServer().getPluginManager().registerEvents(fallGuard, this);
+    getServer().getPluginManager().registerEvents(moveGuard, this);
     getServer()
         .getPluginManager()
         .registerEvents(
-            new PadListener(pads, launcher, getConfig().getInt("pad-cooldown-ticks"), getLogger()),
-            this);
+            new PadListener(pads, launcher, getConfig().getInt("pad-cooldown-ticks")), this);
     getLifecycleManager()
         .registerEventHandler(
             LifecycleEvents.COMMANDS,

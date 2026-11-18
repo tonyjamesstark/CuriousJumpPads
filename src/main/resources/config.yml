@@ -1,9 +1,15 @@
 # Largest velocity /launch sets on each axis, in blocks per tick.
 max-velocity: 3.9
 
-# Cancel the first fall damage a launched player takes, within fall-guard-seconds of the launch.
-cancel-fall-damage: true
-fall-guard-seconds: 10
+# Let a launched player pass the server's "moved too quickly" check until they land, so a
+# max-velocity above about 10 works horizontally. Each move must fit the launch speed.
+allow-fast-launches: true
+
+# Cancel the first fall damage a launched player takes, if it comes within timeout-seconds of the
+# launch.
+cancel-fall-damage:
+  enabled: true
+  timeout-seconds: 10
 
 # Ticks before the same player can be launched by a pad again.
 pad-cooldown-ticks: 10

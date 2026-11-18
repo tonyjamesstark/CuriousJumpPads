@@ -62,8 +62,15 @@ class BallisticsTest {
   @Test
   void fixedFlightTimeIsHonoured() {
     Vector delta = new Vector(10, 0, 0);
-    Vector v0 = Ballistics.solve(delta, 40, true).orElseThrow();
+    Vector v0 = Ballistics.solve(delta, 40, true, CAP).orElseThrow();
     assertEquals(0, Ballistics.simulate(v0, 40, true).position().distance(delta), 1e-6);
+  }
+
+  @Test
+  void fixedFlightTimeOverTheCapIsUnreachable() {
+    Vector delta = new Vector(40, 0, 0);
+    assertEquals(Optional.empty(), Ballistics.solve(delta, 10, true, CAP));
+    assertTrue(Ballistics.solve(delta, 10, true, 10).isPresent());
   }
 
   private static int ticksToReach(Vector v0, Vector delta, boolean onGround) {

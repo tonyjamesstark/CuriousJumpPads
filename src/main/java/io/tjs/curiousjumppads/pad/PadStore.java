@@ -3,16 +3,27 @@ package io.tjs.curiousjumppads.pad;
 import io.tjs.curiousjumppads.LaunchSpec;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
-/** Pads by block, saved to pads.yml on every change. */
+/**
+ * Pads by block, saved to pads.yml on every change. A failed save is logged and the pads stay in
+ * memory, so the next change saves them.
+ */
 public final class PadStore {
   private final File file;
+  private final Logger log;
   private final Map<BlockKey, Pad> pads = new LinkedHashMap<>();
   private boolean enabled = true;
 
@@ -20,53 +31,89 @@ public final class PadStore {
    * Creates a store backed by a file.
    *
    * @param file {@code pads.yml}; need not exist yet
+   * @param log where read and save failures go
    */
-  public PadStore(File file) {
+  public PadStore(File file, Logger log) {
     this.file = file;
-  }
-
-  /** Replaces the pads in memory with those in the file; a missing file means no pads. */
-  public void load() {
-    pads.clear();
-    YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
-    enabled = yaml.getBoolean("enabled", true);
-    for (Map<?, ?> m : yaml.getMapList("pads")) {
-      BlockKey key =
-          new BlockKey(
-              String.valueOf(m.get("world")),
-              ((Number) m.get("x")).intValue(),
-              ((Number) m.get("y")).intValue(),
-              ((Number) m.get("z")).intValue());
-      pads.put(
-          key,
-          new Pad(
-              LaunchSpec.deserialize((Map<?, ?>) m.get("launch")),
-              !Boolean.FALSE.equals(m.get("enabled"))));
-    }
+    this.log = log;
   }
 
   /**
-   * Writes every pad and the global switch to the file.
-   *
-   * @throws IOException if the file cannot be written
+   * Replaces the pads in memory with those in the file; a missing file means no pads. An unreadable
+   * file, or an entry that is not a valid pad, is logged and skipped, and the file is copied to
+   * {@code pads.yml.bak} before the next save overwrites it.
    */
-  public void save() throws IOException {
+  public void load() {
+    pads.clear();
+    enabled = true;
+    if (!file.exists()) {
+      return;
+    }
+    YamlConfiguration yaml = new YamlConfiguration();
+    try {
+      yaml.load(file);
+    } catch (IOException | InvalidConfigurationException e) {
+      log.log(Level.SEVERE, "Could not read " + file.getName() + "; starting with no pads", e);
+      backUp();
+      return;
+    }
+    enabled = yaml.getBoolean("enabled", true);
+    boolean skipped = false;
+    for (Map<?, ?> m : yaml.getMapList("pads")) {
+      try {
+        pads.put(BlockKey.read(m), read(m));
+      } catch (IllegalArgumentException e) {
+        log.warning("Skipped a pad in " + file.getName() + " (" + e.getMessage() + "): " + m);
+        skipped = true;
+      }
+    }
+    if (skipped) {
+      backUp();
+    }
+  }
+
+  private static Pad read(Map<?, ?> m) {
+    if (!(m.get("launch") instanceof Map<?, ?> launch)) {
+      throw new IllegalArgumentException("no launch");
+    }
+    Object cooldown = m.get("cooldown-ticks");
+    if (cooldown != null && !(cooldown instanceof Number)) {
+      throw new IllegalArgumentException("cooldown-ticks is not a number");
+    }
+    return new Pad(
+        LaunchSpec.deserialize(launch),
+        !Boolean.FALSE.equals(m.get("enabled")),
+        cooldown == null ? OptionalInt.empty() : OptionalInt.of(((Number) cooldown).intValue()));
+  }
+
+  private void backUp() {
+    File backup = new File(file.getParentFile(), file.getName() + ".bak");
+    try {
+      Files.copy(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING);
+      log.warning("Saved the original as " + backup.getName());
+    } catch (IOException e) {
+      log.log(Level.SEVERE, "Could not back up " + file.getName(), e);
+    }
+  }
+
+  private void save() {
     YamlConfiguration yaml = new YamlConfiguration();
     yaml.set("enabled", enabled);
     List<Map<String, Object>> list = new ArrayList<>();
     pads.forEach(
         (key, pad) -> {
-          Map<String, Object> m = new LinkedHashMap<>();
-          m.put("world", key.world());
-          m.put("x", key.x());
-          m.put("y", key.y());
-          m.put("z", key.z());
+          Map<String, Object> m = key.write();
           m.put("enabled", pad.enabled());
+          pad.cooldownTicks().ifPresent(t -> m.put("cooldown-ticks", t));
           m.put("launch", pad.spec().serialize());
           list.add(m);
         });
     yaml.set("pads", list);
-    yaml.save(file);
+    try {
+      yaml.save(file);
+    } catch (IOException e) {
+      log.log(Level.SEVERE, "Could not save " + file.getName() + "; pads are kept in memory", e);
+    }
   }
 
   /**
@@ -77,6 +124,18 @@ public final class PadStore {
    */
   public Pad get(BlockKey key) {
     return pads.get(key);
+  }
+
+  /**
+   * The pad a player whose feet are in a block stands on: a plate pad in that block, else a full
+   * block pad under it.
+   *
+   * @param feet the block the player's feet are in
+   * @return the pad, or null
+   */
+  public Pad padUnder(BlockKey feet) {
+    Pad pad = pads.get(feet);
+    return pad != null ? pad : pads.get(feet.below());
   }
 
   /**
@@ -93,22 +152,20 @@ public final class PadStore {
    *
    * @param key the pad block
    * @param pad the pad
-   * @throws IOException if the file cannot be written
    */
-  public void put(BlockKey key, Pad pad) throws IOException {
+  public void put(BlockKey key, Pad pad) {
     pads.put(key, pad);
     save();
   }
 
   /**
-   * Removes a pad and saves, if there is one.
+   * Removes the pads at some blocks and saves once, if any were there.
    *
-   * @param key the pad block
+   * @param keys the blocks
    * @return whether a pad was removed
-   * @throws IOException if the file cannot be written
    */
-  public boolean remove(BlockKey key) throws IOException {
-    if (pads.remove(key) == null) {
+  public boolean removeAll(Collection<BlockKey> keys) {
+    if (!pads.keySet().removeAll(keys)) {
       return false;
     }
     save();
@@ -128,9 +185,8 @@ public final class PadStore {
    * Sets the global switch ({@code /jumppad enable|disable all}) and saves.
    *
    * @param enabled the new state
-   * @throws IOException if the file cannot be written
    */
-  public void setEnabled(boolean enabled) throws IOException {
+  public void setEnabled(boolean enabled) {
     this.enabled = enabled;
     save();
   }
