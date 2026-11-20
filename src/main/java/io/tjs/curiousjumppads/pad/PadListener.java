@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.IntSupplier;
 import org.bukkit.Bukkit;
 import org.bukkit.Tag;
 import org.bukkit.block.Block;
@@ -27,7 +28,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 public final class PadListener implements Listener {
   private final PadStore store;
   private final Launcher launcher;
-  private final int cooldownTicks;
+  private final IntSupplier cooldownTicks;
   private final Map<UUID, Integer> lastLaunchTick = new HashMap<>();
 
   /**
@@ -35,10 +36,10 @@ public final class PadListener implements Listener {
    *
    * @param store the pads
    * @param launcher applies a pad's launch
-   * @param cooldownTicks {@code pad-cooldown-ticks}: ticks before a pad without its own cooldown
-   *     can launch the same player again
+   * @param cooldownTicks the current {@code pad-cooldown-ticks}: ticks before a pad without its own
+   *     cooldown can launch the same player again
    */
-  public PadListener(PadStore store, Launcher launcher, int cooldownTicks) {
+  public PadListener(PadStore store, Launcher launcher, IntSupplier cooldownTicks) {
     this.store = store;
     this.launcher = launcher;
     this.cooldownTicks = cooldownTicks;
@@ -62,7 +63,7 @@ public final class PadListener implements Listener {
     }
     int now = Bukkit.getCurrentTick();
     Integer last = lastLaunchTick.get(player.getUniqueId());
-    if (last != null && now - last < pad.cooldownTicks().orElse(cooldownTicks)) {
+    if (last != null && now - last < pad.cooldownTicks().orElseGet(cooldownTicks)) {
       return;
     }
     if (launcher.launch(player, pad.spec()) instanceof Launcher.Outcome.Launched) {

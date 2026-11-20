@@ -19,6 +19,7 @@ Every command, permission and config key in CuriousJumpPads. New to the plugin? 
 | [`/jumppad cooldown <ticks>` \| `default`](#jumppad) | `jumppads.admin` | Set the looked-at pad's cooldown |
 | [`/jumppad enable` \| `disable`](#jumppad) | `jumppads.admin` | Switch the looked-at pad |
 | [`/jumppad enable all` \| `disable all`](#jumppad) | `jumppads.admin` | Switch every pad |
+| [`/jumppad reload`](#jumppad) | `jumppads.admin` | Reread `config.yml` and `pads.yml` |
 
 Both commands work from players, the console and command blocks, with vanilla selectors and
 `~` coordinates. Velocities are in blocks per tick (20 ticks = 1 second).
@@ -45,7 +46,7 @@ Both commands work from players, the console and command blocks, with vanilla se
 
 ### /jumppad
 
-All forms except `list` and `... all` act on the block you look at, within 5 blocks, so only
+All forms except `list`, `... all` and `reload` act on the block you look at, within 5 blocks, so only
 players can use them.
 
 | Form | Effect |
@@ -60,6 +61,7 @@ players can use them.
 | `cooldown default` | Use `pad-cooldown-ticks` again |
 | `enable`, `disable` | Switch this pad on or off |
 | `enable all`, `disable all` | Switch every pad on or off; each pad keeps its own state |
+| `reload` | Reread `config.yml` and `pads.yml`, picking up hand edits to either |
 
 A pad is a pressure plate (players stand *in* it) or a full block such as slime (players stand
 *on* it). It fires when a player's feet move into the plate's block or onto the pad block, so
@@ -85,7 +87,7 @@ lp group default permission set jumppads.use false world=lobby
 
 ## Config
 
-`plugins/CuriousJumpPads/config.yml`, read at startup.
+`plugins/CuriousJumpPads/config.yml`, read at startup and on `/jumppad reload`.
 
 | Key | Default | Meaning |
 |---|---|---|

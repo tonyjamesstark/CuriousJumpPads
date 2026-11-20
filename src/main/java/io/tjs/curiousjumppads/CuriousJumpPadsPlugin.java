@@ -9,30 +9,31 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 /**
  * Plugin entry point: reads {@code config.yml} and {@code pads.yml}, registers the listeners and
- * the {@code /launch} and {@code /jumppad} commands.
+ * the {@code /launch} and {@code /jumppad} commands, and rereads both files on {@code /jumppad
+ * reload}.
  */
 public final class CuriousJumpPadsPlugin extends JavaPlugin {
+  private Settings settings;
+  private PadStore pads;
+
   /** Created by the server. */
   public CuriousJumpPadsPlugin() {}
 
   @Override
   public void onEnable() {
     saveDefaultConfig();
-    FallGuard fallGuard =
-        new FallGuard(
-            getConfig().getBoolean("cancel-fall-damage.enabled"),
-            getConfig().getLong("cancel-fall-damage.timeout-seconds") * 1000);
-    MoveGuard moveGuard = new MoveGuard(getConfig().getBoolean("allow-fast-launches"));
-    Launcher launcher = new Launcher(fallGuard, moveGuard, getConfig().getDouble("max-velocity"));
-    PadStore pads = new PadStore(new File(getDataFolder(), "pads.yml"), getLogger());
+    settings = Settings.from(getConfig());
+    FallGuard fallGuard = new FallGuard(() -> settings);
+    MoveGuard moveGuard = new MoveGuard(() -> settings);
+    Launcher launcher = new Launcher(fallGuard, moveGuard, () -> settings);
+    pads = new PadStore(new File(getDataFolder(), "pads.yml"), getLogger());
     pads.load();
 
     getServer().getPluginManager().registerEvents(fallGuard, this);
     getServer().getPluginManager().registerEvents(moveGuard, this);
     getServer()
         .getPluginManager()
-        .registerEvents(
-            new PadListener(pads, launcher, getConfig().getInt("pad-cooldown-ticks")), this);
+        .registerEvents(new PadListener(pads, launcher, () -> settings.padCooldownTicks()), this);
     getLifecycleManager()
         .registerEventHandler(
             LifecycleEvents.COMMANDS,
@@ -40,7 +41,15 @@ public final class CuriousJumpPadsPlugin extends JavaPlugin {
               event
                   .registrar()
                   .register(LaunchCommand.node(launcher), "Set or add to player velocity");
-              event.registrar().register(new PadCommand(pads).node(), "Manage jump pads");
+              event
+                  .registrar()
+                  .register(new PadCommand(pads, this::reload).node(), "Manage jump pads");
             });
+  }
+
+  private void reload() {
+    reloadConfig();
+    settings = Settings.from(getConfig());
+    pads.load();
   }
 }

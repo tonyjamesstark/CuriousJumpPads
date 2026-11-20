@@ -1,6 +1,7 @@
 package io.tjs.curiousjumppads;
 
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
@@ -8,19 +9,19 @@ import org.bukkit.util.Vector;
 public final class Launcher {
   private final FallGuard fallGuard;
   private final MoveGuard moveGuard;
-  private final double maxVelocity;
+  private final Supplier<Settings> settings;
 
   /**
    * Creates a launcher.
    *
    * @param fallGuard armed for each launched player
    * @param moveGuard exempts each launched player from the "moved too quickly" check
-   * @param maxVelocity the largest velocity per axis, in blocks per tick
+   * @param settings the current config, for {@code max-velocity}
    */
-  Launcher(FallGuard fallGuard, MoveGuard moveGuard, double maxVelocity) {
+  Launcher(FallGuard fallGuard, MoveGuard moveGuard, Supplier<Settings> settings) {
     this.fallGuard = fallGuard;
     this.moveGuard = moveGuard;
-    this.maxVelocity = maxVelocity;
+    this.settings = settings;
   }
 
   /** What a launch did. */
@@ -47,6 +48,7 @@ public final class Launcher {
    * @return whether the player was launched, and if not, why
    */
   public Outcome launch(Player player, LaunchSpec spec) {
+    double maxVelocity = settings.get().maxVelocity();
     Vector velocity;
     switch (spec) {
       case LaunchSpec.Velocity v ->
@@ -62,7 +64,7 @@ public final class Launcher {
         if (player.isGliding() || player.isFlying()) {
           return new Outcome.Skipped();
         }
-        Optional<Vector> arc = arc(player, t);
+        Optional<Vector> arc = arc(player, t, maxVelocity);
         if (arc.isEmpty()) {
           return new Outcome.Unreachable(
               t.ticks() > 0
@@ -79,7 +81,10 @@ public final class Launcher {
       }
     }
     Vector applied =
-        new Vector(clamp(velocity.getX()), clamp(velocity.getY()), clamp(velocity.getZ()));
+        new Vector(
+            clamp(velocity.getX(), maxVelocity),
+            clamp(velocity.getY(), maxVelocity),
+            clamp(velocity.getZ(), maxVelocity));
     player.setVelocity(applied);
     fallGuard.guard(player);
     moveGuard.guard(player, applied);
@@ -87,14 +92,14 @@ public final class Launcher {
   }
 
   @SuppressWarnings("deprecation") // isOnGround is client-reported, which is what the arc needs
-  private Optional<Vector> arc(Player player, LaunchSpec.To t) {
+  private static Optional<Vector> arc(Player player, LaunchSpec.To t, double maxVelocity) {
     Vector delta = t.target().clone().subtract(player.getLocation().toVector());
     return t.ticks() > 0
         ? Ballistics.solve(delta, t.ticks(), player.isOnGround(), maxVelocity)
         : Ballistics.solve(delta, player.isOnGround(), maxVelocity);
   }
 
-  private double clamp(double v) {
+  private static double clamp(double v, double maxVelocity) {
     return Math.max(-maxVelocity, Math.min(maxVelocity, v));
   }
 }

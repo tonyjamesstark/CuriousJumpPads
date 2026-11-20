@@ -3,6 +3,7 @@ package io.tjs.curiousjumppads;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -11,20 +12,17 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 /** Cancels the first fall damage a launched player takes before the guard expires. */
 final class FallGuard implements Listener {
-  private final boolean enabled;
-  private final long durationMillis;
+  private final Supplier<Settings> settings;
   private final Map<UUID, Long> expiresAt = new HashMap<>();
 
   /**
    * Creates the guard.
    *
-   * @param enabled {@code cancel-fall-damage.enabled}; when false, {@link #guard} does nothing
-   * @param durationMillis {@code cancel-fall-damage.timeout-seconds}: how long after a launch the
-   *     guard stays armed
+   * @param settings the current config; when {@code cancel-fall-damage.enabled} is false, {@link
+   *     #guard} does nothing
    */
-  FallGuard(boolean enabled, long durationMillis) {
-    this.enabled = enabled;
-    this.durationMillis = durationMillis;
+  FallGuard(Supplier<Settings> settings) {
+    this.settings = settings;
   }
 
   /**
@@ -33,8 +31,9 @@ final class FallGuard implements Listener {
    * @param player the launched player
    */
   void guard(Player player) {
-    if (enabled) {
-      expiresAt.put(player.getUniqueId(), System.currentTimeMillis() + durationMillis);
+    Settings s = settings.get();
+    if (s.cancelFallDamage()) {
+      expiresAt.put(player.getUniqueId(), System.currentTimeMillis() + s.fallGuardMillis());
     }
   }
 

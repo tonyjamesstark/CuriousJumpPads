@@ -35,14 +35,17 @@ public final class PadCommand {
   private static final SimpleCommandExceptionType PLAYERS_ONLY = error("Only players can do that.");
 
   private final PadStore store;
+  private final Runnable reload;
 
   /**
    * Creates the command.
    *
    * @param store the pads the command edits
+   * @param reload rereads {@code config.yml} and {@code pads.yml}
    */
-  public PadCommand(PadStore store) {
+  public PadCommand(PadStore store, Runnable reload) {
     this.store = store;
+    this.reload = reload;
   }
 
   /**
@@ -81,6 +84,7 @@ public final class PadCommand {
             Commands.literal("disable")
                 .executes(c -> toggle(c, false))
                 .then(Commands.literal("all").executes(c -> toggleAll(c, false))))
+        .then(Commands.literal("reload").executes(this::reload))
         .build();
   }
 
@@ -147,6 +151,12 @@ public final class PadCommand {
   private int toggleAll(CommandContext<CommandSourceStack> c, boolean enabled) {
     store.setEnabled(enabled);
     reply(c, enabled ? "All jump pads enabled." : "All jump pads disabled.");
+    return Command.SINGLE_SUCCESS;
+  }
+
+  private int reload(CommandContext<CommandSourceStack> c) {
+    reload.run();
+    reply(c, "Reloaded config.yml and " + store.all().size() + " jump pads from pads.yml.");
     return Command.SINGLE_SUCCESS;
   }
 

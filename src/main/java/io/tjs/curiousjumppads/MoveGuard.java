@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -34,17 +35,18 @@ final class MoveGuard implements Listener {
   /** The longest a launch stays exempt if the player never lands: the longest solved flight. */
   static final long MAX_FLIGHT_MILLIS = Ballistics.MAX_TICKS * 50L;
 
-  private final boolean enabled;
+  private final Supplier<Settings> settings;
   private final Map<UUID, Flight> flights = new HashMap<>();
   private final Set<UUID> airborne = new HashSet<>();
 
   /**
    * Creates the guard.
    *
-   * @param enabled {@code allow-fast-launches}; when false, {@link #guard} does nothing
+   * @param settings the current config; when {@code allow-fast-launches} is false, {@link #guard}
+   *     does nothing
    */
-  MoveGuard(boolean enabled) {
-    this.enabled = enabled;
+  MoveGuard(Supplier<Settings> settings) {
+    this.settings = settings;
   }
 
   /**
@@ -54,7 +56,7 @@ final class MoveGuard implements Listener {
    * @param velocity the velocity they were given
    */
   void guard(Player player, Vector velocity) {
-    if (!enabled) {
+    if (!settings.get().allowFastLaunches()) {
       return;
     }
     flights.put(
