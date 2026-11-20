@@ -37,23 +37,37 @@ final class LaunchCommand {
                 Commands.literal("toward")
                     .then(
                         Commands.argument("entity", ArgumentTypes.entity())
-                            .executes(c -> toward(c, launcher, 0))
+                            .executes(c -> toward(c, launcher, 0, false))
+                            .then(
+                                Commands.literal(SpecArguments.BOOST)
+                                    .executes(c -> toward(c, launcher, 0, true)))
                             .then(
                                 Commands.argument("ticks", integer(1, Ballistics.MAX_TICKS))
-                                    .executes(c -> toward(c, launcher, getInteger(c, "ticks"))))));
+                                    .executes(
+                                        c -> toward(c, launcher, getInteger(c, "ticks"), false))
+                                    .then(
+                                        Commands.literal(SpecArguments.BOOST)
+                                            .executes(
+                                                c ->
+                                                    toward(
+                                                        c,
+                                                        launcher,
+                                                        getInteger(c, "ticks"),
+                                                        true))))));
     return Commands.literal("launch")
         .requires(source -> source.getSender().hasPermission("jumppads.launch"))
         .then(SpecArguments.addTo(targets, (c, spec) -> run(c, launcher, spec)))
         .build();
   }
 
-  private static int toward(CommandContext<CommandSourceStack> c, Launcher launcher, int ticks)
+  private static int toward(
+      CommandContext<CommandSourceStack> c, Launcher launcher, int ticks, boolean boost)
       throws CommandSyntaxException {
     Entity entity =
         c.getArgument("entity", EntitySelectorArgumentResolver.class)
             .resolve(c.getSource())
             .getFirst();
-    return run(c, launcher, new LaunchSpec.To(entity.getLocation().toVector(), ticks));
+    return run(c, launcher, new LaunchSpec.To(entity.getLocation().toVector(), ticks, boost));
   }
 
   private static int run(CommandContext<CommandSourceStack> c, Launcher launcher, LaunchSpec spec)

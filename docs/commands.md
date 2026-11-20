@@ -43,6 +43,13 @@ Both commands work from players, the console and command blocks, with vanilla se
   With `ticks`, an arc that would need more than `max-velocity` is refused the same way (*No arc
   reaches that point in exactly ... ticks*) instead of flying a capped, shorter arc.
 - Every launch is capped at `max-velocity` per axis.
+- Any form, here or in `/jumppad set`, can end in `boost`: `to 90 100 0 boost`,
+  `forward 2 0.5 boost`. A boosted flight gets its horizontal speed put back to the launch speed
+  every `lateral-boost.interval-ticks` until it lands, so it carries much further: from the
+  ground at 3.9, `to` reaches about 27 blocks without `boost` and well over 100 with it. `to`
+  aims for the boosts and re-aims from where the player is at each one, so it still lands on
+  target when a boost reaches them a tick late. With `lateral-boost.enabled: false`, `boost`
+  is accepted and ignored.
 
 ### /jumppad
 
@@ -96,9 +103,12 @@ lp group default permission set jumppads.use false world=lobby
 | `cancel-fall-damage.enabled` | `true` | Cancel a launched player's first fall damage... |
 | `cancel-fall-damage.timeout-seconds` | `10` | ...if it comes within this many seconds of the launch |
 | `pad-cooldown-ticks` | `10` | Ticks before a pad can launch the same player again, unless the pad has its own `cooldown` |
+| `lateral-boost.enabled` | `true` | Whether launches ending in `boost` are boosted. `false` ignores `boost` everywhere, pads included |
+| `lateral-boost.interval-ticks` | `10` | Ticks of the player's flight between boosts, counted in their own moves so server lag does not shift them. Smaller holds speed more evenly and reaches further. 2 to 10 lands `to` most accurately; 1 is slightly less accurate |
 
 The config is not rewritten on upgrade. A 0.0.0 config's `cancel-fall-damage: true` and
 `fall-guard-seconds` are ignored, and the defaults above apply until you replace them with the
-`cancel-fall-damage:` section.
+`cancel-fall-damage:` section. A config without the `lateral-boost:` section uses the defaults
+above.
 
 See [Limits](limits.md) before raising `max-velocity`.

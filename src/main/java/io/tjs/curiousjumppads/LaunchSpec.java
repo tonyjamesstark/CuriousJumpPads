@@ -7,28 +7,38 @@ import org.bukkit.util.Vector;
 /** How to launch a player, shared by /launch and pads. */
 public sealed interface LaunchSpec {
   /**
+   * Whether the flight gets the lateral boost from {@code lateral-boost} in {@code config.yml}.
+   *
+   * @return true if the launch asked for {@code boost}
+   */
+  boolean boost();
+
+  /**
    * Set the velocity, or add it to the current one.
    *
    * @param velocity blocks per tick
    * @param add true to add to the current velocity
+   * @param boost see {@link LaunchSpec#boost}
    */
-  record Velocity(Vector velocity, boolean add) implements LaunchSpec {}
+  record Velocity(Vector velocity, boolean add, boolean boost) implements LaunchSpec {}
 
   /**
    * Along the player's look direction, plus {@code lift} upward.
    *
    * @param power multiplier on the unit look vector, in blocks per tick
    * @param lift added to y, in blocks per tick
+   * @param boost see {@link LaunchSpec#boost}
    */
-  record Forward(double power, double lift) implements LaunchSpec {}
+  record Forward(double power, double lift, boolean boost) implements LaunchSpec {}
 
   /**
    * An arc that lands at {@code target}.
    *
    * @param target landing position; y is the floor the player lands on
    * @param ticks flight time, or 0 for the flattest arc under the cap
+   * @param boost see {@link LaunchSpec#boost}
    */
-  record To(Vector target, int ticks) implements LaunchSpec {}
+  record To(Vector target, int ticks, boolean boost) implements LaunchSpec {}
 
   /**
    * The launch as plain values, for {@code pads.yml}.
@@ -53,6 +63,9 @@ public sealed interface LaunchSpec {
         m.put("ticks", t.ticks());
       }
     }
+    if (boost()) {
+      m.put("boost", true);
+    }
     return m;
   }
 
@@ -66,20 +79,25 @@ public sealed interface LaunchSpec {
    */
   static LaunchSpec deserialize(Map<?, ?> m) {
     String type = String.valueOf(m.get("type"));
+    boolean boost = Boolean.TRUE.equals(m.get("boost"));
     return switch (type) {
-      case "set", "add" -> new Velocity(vector(m), type.equals("add"));
-      case "forward" -> new Forward(number(m, "power"), number(m, "lift"));
-      case "to" -> new To(vector(m), (int) number(m, "ticks"));
+      case "set", "add" -> new Velocity(vector(m), type.equals("add"), boost);
+      case "forward" -> new Forward(number(m, "power"), number(m, "lift"), boost);
+      case "to" -> new To(vector(m), (int) number(m, "ticks"), boost);
       default -> throw new IllegalArgumentException("unknown launch type: " + type);
     };
   }
 
   /**
-   * A one-line summary for chat, such as {@code to 20.50 100.00 0.50 in 40 ticks}.
+   * A one-line summary for chat, such as {@code to 20.50 100.00 0.50 in 40 ticks boost}.
    *
    * @return the summary
    */
   default String describe() {
+    return base() + (boost() ? " boost" : "");
+  }
+
+  private String base() {
     return switch (this) {
       case Velocity v -> (v.add() ? "add " : "set ") + format(v.velocity());
       case Forward f -> "forward " + f.power() + " lift " + f.lift();

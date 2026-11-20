@@ -25,12 +25,15 @@ public final class CuriousJumpPadsPlugin extends JavaPlugin {
     settings = Settings.from(getConfig());
     FallGuard fallGuard = new FallGuard(() -> settings);
     MoveGuard moveGuard = new MoveGuard(() -> settings);
-    Launcher launcher = new Launcher(fallGuard, moveGuard, () -> settings);
+    LateralBoost lateralBoost = new LateralBoost();
+    Launcher launcher = new Launcher(fallGuard, moveGuard, lateralBoost, () -> settings);
     pads = new PadStore(new File(getDataFolder(), "pads.yml"), getLogger());
     pads.load();
 
     getServer().getPluginManager().registerEvents(fallGuard, this);
     getServer().getPluginManager().registerEvents(moveGuard, this);
+    getServer().getPluginManager().registerEvents(lateralBoost, this);
+    getServer().getScheduler().runTaskTimer(this, lateralBoost::tick, 1, 1);
     getServer()
         .getPluginManager()
         .registerEvents(new PadListener(pads, launcher, () -> settings.padCooldownTicks()), this);

@@ -6,7 +6,10 @@ import org.bukkit.util.Vector;
 /**
  * Player flight under vanilla client physics. Each tick the player moves by its velocity, then
  * {@code vy = (vy - 0.08) * 0.98} and the horizontal velocity is multiplied by the friction of
- * where the tick started: 0.91 in the air, 0.6 * 0.91 on an ordinary block.
+ * where the tick started: 0.91 in the air, 0.6 * 0.91 on an ordinary block. A boosted flight has
+ * its horizontal velocity put back to the launch's every {@code boostInterval} ticks, except the
+ * last boost before it lands: a boost that late reaches the client too close to landing to be
+ * corrected if it arrives a tick off.
  */
 public final class Ballistics {
   /** Blocks per tick squared, subtracted from vertical velocity each tick. */
@@ -25,10 +28,18 @@ public final class Ballistics {
   public static final int MAX_TICKS = 400;
 
   /**
-   * The shortest flight {@link #solve(Vector, boolean, double)} picks: shorter arcs carry so much
-   * horizontal speed that the player slides well past the target.
+   * The shortest flight {@link #solve(Vector, boolean, int, double)} picks: shorter arcs carry so
+   * much horizontal speed that the player slides well past the target.
    */
   static final int MIN_TICKS = 10;
+
+  /**
+   * The least an arc ends below its target. A client lands only when a move is cut short by the
+   * floor, so an arc whose last tick ends exactly on it flies one more tick past the target. Arcs
+   * end half their last vertical step below instead, so an error in height smaller than that still
+   * lands on the planned tick; this floor only matters for an arc that is barely falling.
+   */
+  static final double SINK = 0.001;
 
   /** How far a searched arc peaks above the target, so it clears the edge of a ledge. */
   static final double CLEARANCE = 1.0;
@@ -50,9 +61,25 @@ public final class Ballistics {
    * @param v0 launch velocity
    * @param ticks ticks to run
    * @param onGround whether the first tick starts on the ground
+   * @param boostInterval ticks between horizontal boosts, or 0 for none
    * @return the state after {@code ticks} ticks
    */
-  static State simulate(Vector v0, int ticks, boolean onGround) {
+  static State simulate(Vector v0, int ticks, boolean onGround, int boostInterval) {
+    return simulate(v0, ticks, onGround, boostInterval, 0);
+  }
+
+  /**
+   * As {@link #simulate(Vector, int, boolean, int)}, for a flight {@code phase} ticks into its
+   * boost interval.
+   *
+   * @param v0 velocity now
+   * @param ticks ticks to run
+   * @param onGround whether the first tick starts on the ground
+   * @param boostInterval ticks between horizontal boosts, or 0 for none
+   * @param phase ticks since the last boost was due
+   * @return the state after {@code ticks} ticks
+   */
+  static State simulate(Vector v0, int ticks, boolean onGround, int boostInterval, int phase) {
     Vector pos = new Vector();
     Vector vel = v0.clone();
     double apex = 0;
@@ -63,41 +90,79 @@ public final class Ballistics {
       vel.setX(vel.getX() * friction)
           .setY((vel.getY() - GRAVITY) * VERTICAL_DRAG)
           .setZ(vel.getZ() * friction);
+      if (boostInterval > 0
+          && (t + 1 + phase) % boostInterval == 0
+          && ticks - (t + 1) > boostInterval) {
+        vel.setX(v0.getX()).setZ(v0.getZ());
+      }
     }
     return new State(pos, vel, apex);
   }
 
   /**
+   * The first tick on which a flight is falling and at or below {@code dy} above its start: when a
+   * {@code to} arc reaches its target, or another launch comes back down to where it started.
+   *
+   * @param v0 launch velocity
+   * @param onGround whether the first tick starts on the ground
+   * @param boostInterval ticks between horizontal boosts, or 0 for none
+   * @param dy landing height relative to the start, in blocks
+   * @return that tick, or {@link #MAX_TICKS} if the flight is still above {@code dy} by then
+   */
+  static int landingTick(Vector v0, boolean onGround, int boostInterval, double dy) {
+    for (int t = 1; t < MAX_TICKS; t++) {
+      State s = simulate(v0, t, onGround, boostInterval);
+      if (s.velocity().getY() < 0 && s.position().getY() <= dy + 1e-6) {
+        return t;
+      }
+    }
+    return MAX_TICKS;
+  }
+
+  /**
    * The launch velocity that puts the player at {@code delta} from its start after exactly {@code
-   * ticks} ticks, or empty if it exceeds {@code maxVelocity} on any axis or the player would not be
-   * rising at launch and falling on arrival.
+   * ticks} ticks, sunk below it as {@link #SINK} describes, or empty if it exceeds {@code
+   * maxVelocity} on any axis or the player would not be rising at launch and falling on arrival.
    *
    * @param delta target minus start position, in blocks
    * @param ticks flight time
    * @param onGround whether the player starts on the ground (true costs reach on the first tick)
+   * @param boostInterval ticks between horizontal boosts, or 0 for none
    * @param maxVelocity the cap per axis, in blocks per tick
    * @return the launch velocity, or empty
    */
   public static Optional<Vector> solve(
-      Vector delta, int ticks, boolean onGround, double maxVelocity) {
-    return arc(delta, ticks, onGround).filter(v -> withinCap(v, maxVelocity));
+      Vector delta, int ticks, boolean onGround, int boostInterval, double maxVelocity) {
+    return arc(delta, ticks, onGround, boostInterval).filter(v -> withinCap(v, maxVelocity));
   }
 
-  private static Optional<Vector> arc(Vector delta, int ticks, boolean onGround) {
-    // Displacement is linear in the launch velocity: d = v0 * unit + gravityOnly.
-    State gravityOnly = simulate(new Vector(), ticks, onGround);
-    State unit = simulate(new Vector(1, 1, 1), ticks, onGround);
-    double horizontal = unit.position().getX();
-    double vertical = unit.position().getY() - gravityOnly.position().getY();
-    Vector v0 =
-        new Vector(
-            delta.getX() / horizontal,
-            (delta.getY() - gravityOnly.position().getY()) / vertical,
-            delta.getZ() / horizontal);
-    if (v0.getY() <= 0 || simulate(v0, ticks, onGround).velocity().getY() >= 0) {
+  private static Optional<Vector> arc(
+      Vector delta, int ticks, boolean onGround, int boostInterval) {
+    Vector v0 = sunk(delta, ticks, onGround, boostInterval);
+    if (v0.getY() <= 0 || simulate(v0, ticks, onGround, boostInterval).velocity().getY() >= 0) {
       return Optional.empty();
     }
     return Optional.of(v0);
+  }
+
+  private static Vector sunk(Vector delta, int ticks, boolean onGround, int boostInterval) {
+    // Sinking barely changes the last step, so one pass sizes it.
+    Vector v = exact(delta, ticks, onGround, boostInterval);
+    double lastStep = simulate(v, ticks - 1, onGround, boostInterval).velocity().getY();
+    Vector below = delta.clone().setY(delta.getY() - Math.max(SINK, -lastStep / 2));
+    return exact(below, ticks, onGround, boostInterval);
+  }
+
+  private static Vector exact(Vector delta, int ticks, boolean onGround, int boostInterval) {
+    // Displacement is linear in the launch velocity: d = v0 * unit + gravityOnly.
+    State gravityOnly = simulate(new Vector(), ticks, onGround, boostInterval);
+    State unit = simulate(new Vector(1, 1, 1), ticks, onGround, boostInterval);
+    double horizontal = unit.position().getX();
+    double vertical = unit.position().getY() - gravityOnly.position().getY();
+    return new Vector(
+        delta.getX() / horizontal,
+        (delta.getY() - gravityOnly.position().getY()) / vertical,
+        delta.getZ() / horizontal);
   }
 
   /**
@@ -106,14 +171,17 @@ public final class Ballistics {
    *
    * @param delta target minus start position, in blocks
    * @param onGround whether the player starts on the ground
+   * @param boostInterval ticks between horizontal boosts, or 0 for none
    * @param maxVelocity the cap per axis, in blocks per tick
    * @return the launch velocity, or empty if the target is out of reach
    */
-  public static Optional<Vector> solve(Vector delta, boolean onGround, double maxVelocity) {
+  public static Optional<Vector> solve(
+      Vector delta, boolean onGround, int boostInterval, double maxVelocity) {
     for (int ticks = MIN_TICKS; ticks <= MAX_TICKS; ticks++) {
-      Optional<Vector> v0 = solve(delta, ticks, onGround, maxVelocity);
+      Optional<Vector> v0 = solve(delta, ticks, onGround, boostInterval, maxVelocity);
       if (v0.isPresent()
-          && simulate(v0.get(), ticks, onGround).apex() >= delta.getY() + CLEARANCE) {
+          && simulate(v0.get(), ticks, onGround, boostInterval).apex()
+              >= delta.getY() + CLEARANCE) {
         return v0;
       }
     }

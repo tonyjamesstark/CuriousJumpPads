@@ -9,6 +9,7 @@ import org.bukkit.util.Vector;
 public final class Launcher {
   private final FallGuard fallGuard;
   private final MoveGuard moveGuard;
+  private final LateralBoost lateralBoost;
   private final Supplier<Settings> settings;
 
   /**
@@ -16,11 +17,17 @@ public final class Launcher {
    *
    * @param fallGuard armed for each launched player
    * @param moveGuard exempts each launched player from the "moved too quickly" check
-   * @param settings the current config, for {@code max-velocity}
+   * @param lateralBoost boosts flights launched with {@code boost}
+   * @param settings the current config, for {@code max-velocity} and {@code lateral-boost}
    */
-  Launcher(FallGuard fallGuard, MoveGuard moveGuard, Supplier<Settings> settings) {
+  Launcher(
+      FallGuard fallGuard,
+      MoveGuard moveGuard,
+      LateralBoost lateralBoost,
+      Supplier<Settings> settings) {
     this.fallGuard = fallGuard;
     this.moveGuard = moveGuard;
+    this.lateralBoost = lateralBoost;
     this.settings = settings;
   }
 
@@ -41,14 +48,20 @@ public final class Launcher {
   }
 
   /**
-   * Launches a player and arms their fall and move guards.
+   * Launches a player, arms their fall and move guards, and starts the lateral boost if the spec
+   * asks for it and {@code lateral-boost} is enabled.
    *
    * @param player the player
    * @param spec how to launch
    * @return whether the player was launched, and if not, why
    */
   public Outcome launch(Player player, LaunchSpec spec) {
-    double maxVelocity = settings.get().maxVelocity();
+    Settings s = settings.get();
+    double maxVelocity = s.maxVelocity();
+    int boostInterval = spec.boost() ? s.boostInterval() : 0;
+    @SuppressWarnings("deprecation") // isOnGround is client-reported, which is what the arc needs
+    boolean onGround = player.isOnGround();
+    Vector target = null;
     Vector velocity;
     switch (spec) {
       case LaunchSpec.Velocity v ->
@@ -64,7 +77,7 @@ public final class Launcher {
         if (player.isGliding() || player.isFlying()) {
           return new Outcome.Skipped();
         }
-        Optional<Vector> arc = arc(player, t, maxVelocity);
+        Optional<Vector> arc = arc(player, t, onGround, boostInterval, maxVelocity);
         if (arc.isEmpty()) {
           return new Outcome.Unreachable(
               t.ticks() > 0
@@ -78,6 +91,7 @@ public final class Launcher {
                       + "; chain pads or raise max-velocity.");
         }
         velocity = arc.get();
+        target = t.target();
       }
     }
     Vector applied =
@@ -88,15 +102,20 @@ public final class Launcher {
     player.setVelocity(applied);
     fallGuard.guard(player);
     moveGuard.guard(player, applied);
+    if (boostInterval > 0) {
+      lateralBoost.start(player, applied, onGround, boostInterval, target, maxVelocity);
+    } else {
+      lateralBoost.stop(player);
+    }
     return new Outcome.Launched();
   }
 
-  @SuppressWarnings("deprecation") // isOnGround is client-reported, which is what the arc needs
-  private static Optional<Vector> arc(Player player, LaunchSpec.To t, double maxVelocity) {
+  private static Optional<Vector> arc(
+      Player player, LaunchSpec.To t, boolean onGround, int boostInterval, double maxVelocity) {
     Vector delta = t.target().clone().subtract(player.getLocation().toVector());
     return t.ticks() > 0
-        ? Ballistics.solve(delta, t.ticks(), player.isOnGround(), maxVelocity)
-        : Ballistics.solve(delta, player.isOnGround(), maxVelocity);
+        ? Ballistics.solve(delta, t.ticks(), onGround, boostInterval, maxVelocity)
+        : Ballistics.solve(delta, onGround, boostInterval, maxVelocity);
   }
 
   private static double clamp(double v, double maxVelocity) {

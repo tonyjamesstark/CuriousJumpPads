@@ -20,7 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 class PadStoreTest {
   private static final Logger LOG = Logger.getAnonymousLogger();
   private static final Pad FORWARD =
-      new Pad(new LaunchSpec.Forward(1, 0), true, OptionalInt.empty());
+      new Pad(new LaunchSpec.Forward(1, 0, false), true, OptionalInt.empty());
 
   @TempDir Path dir;
 
@@ -40,10 +40,13 @@ class PadStoreTest {
     BlockKey b = new BlockKey("world_nether", 0, 64, 0);
     BlockKey c = new BlockKey("world", 5, 70, 5);
     store.put(
-        a, new Pad(new LaunchSpec.To(new Vector(20.5, 100, -1.5), 0), true, OptionalInt.empty()));
-    store.put(b, new Pad(new LaunchSpec.Forward(1.5, 0.6), false, OptionalInt.of(40)));
+        a,
+        new Pad(
+            new LaunchSpec.To(new Vector(20.5, 100, -1.5), 0, true), true, OptionalInt.empty()));
+    store.put(b, new Pad(new LaunchSpec.Forward(1.5, 0.6, false), false, OptionalInt.of(40)));
     store.put(
-        c, new Pad(new LaunchSpec.Velocity(new Vector(0, 2, 1), true), true, OptionalInt.of(0)));
+        c,
+        new Pad(new LaunchSpec.Velocity(new Vector(0, 2, 1), true, true), true, OptionalInt.of(0)));
     store.setEnabled(false);
 
     PadStore reloaded = store("pads.yml");
@@ -75,7 +78,7 @@ class PadStoreTest {
   void padUnderFindsAPlateInTheFeetBlockBeforeABlockBelow() {
     PadStore store = store("pads.yml");
     BlockKey feet = new BlockKey("world", 3, 100, 3);
-    Pad plate = new Pad(new LaunchSpec.Forward(2, 0), true, OptionalInt.empty());
+    Pad plate = new Pad(new LaunchSpec.Forward(2, 0, false), true, OptionalInt.empty());
     store.put(feet.below(), FORWARD);
     assertEquals(FORWARD, store.padUnder(feet));
     store.put(feet, plate);

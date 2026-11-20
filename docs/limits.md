@@ -1,8 +1,13 @@
 # Limits
 
 - **Reach.** At 3.9 a single launch reaches about 27 blocks from the ground and 43 from the air:
-  the first tick from the ground loses ~45% of horizontal speed to ground friction. Chain pads
-  for longer distances.
+  the first tick from the ground loses ~45% of horizontal speed to ground friction. Chain pads,
+  or add `boost` (see [/launch](commands.md#launch)), for longer distances.
+- **Boosted flights** follow the arc the launch predicts, with no boost in the last interval
+  before landing, where a boost that reached the player a tick late could not be corrected.
+  Boosts stop when the player lands or at the tick the arc predicts landing (later by however
+  many ticks a boost reached the client late), whichever is first; until then, a player who hits
+  a wall or ceiling keeps being pushed along the original arc.
 - **Raising `max-velocity`** (see [config](commands.md#config)). 26.2 sends velocity
   without the old ±3.9 packet limit, so higher values work. A move of more than about 10
   blocks in one tick fails the server's "moved too quickly" check, which would pull the

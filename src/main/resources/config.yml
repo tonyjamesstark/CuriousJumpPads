@@ -13,3 +13,14 @@ cancel-fall-damage:
 
 # Ticks before the same player can be launched by a pad again.
 pad-cooldown-ticks: 10
+
+# Launches given the `boost` keyword get their horizontal speed put back to the launch speed every
+# interval-ticks of the player's flight, so long jumps lose less to air drag. `to` arcs are solved
+# with the boosts in and re-aimed at each one, so they still land on target. The last boost before
+# landing is left out. enabled: false turns boosts off everywhere; `boost` is then accepted and
+# ignored.
+lateral-boost:
+  enabled: true
+  # 2-10: most accurate, nearly always on target. 1: boosts every tick, slightly less accurate.
+  # 20+: still accurate, but speed sags more between boosts, so long jumps reach less far.
+  interval-ticks: 10

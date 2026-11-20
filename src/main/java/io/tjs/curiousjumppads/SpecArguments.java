@@ -15,7 +15,7 @@ import io.papermc.paper.command.brigadier.argument.resolvers.FinePositionResolve
 import io.papermc.paper.math.FinePosition;
 import org.bukkit.util.Vector;
 
-/** The {@code set|add|forward|to} arguments that both /launch and /jumppad set take. */
+/** The {@code set|add|forward|to ... [boost]} arguments that both /launch and /jumppad set take. */
 public final class SpecArguments {
   /** Runs a command once its launch arguments are parsed. */
   public interface Executor {
@@ -30,10 +30,19 @@ public final class SpecArguments {
     int run(CommandContext<CommandSourceStack> c, LaunchSpec spec) throws CommandSyntaxException;
   }
 
+  /** The optional last word of every launch form, see {@link LaunchSpec#boost}. */
+  public static final String BOOST = "boost";
+
+  private interface Spec {
+    LaunchSpec make(CommandContext<CommandSourceStack> c, boolean boost)
+        throws CommandSyntaxException;
+  }
+
   private SpecArguments() {}
 
   /**
-   * Adds the {@code set}, {@code add}, {@code forward} and {@code to} branches under a node.
+   * Adds the {@code set}, {@code add}, {@code forward} and {@code to} branches under a node, each
+   * with an optional trailing {@code boost}.
    *
    * @param <T> the node's builder type
    * @param node the node to extend, such as {@code /launch <targets>} or {@code /jumppad set}
@@ -46,30 +55,31 @@ public final class SpecArguments {
         .then(
             Commands.literal("forward")
                 .then(
-                    Commands.argument("power", doubleArg(0))
-                        .executes(
-                            c -> exec.run(c, new LaunchSpec.Forward(getDouble(c, "power"), 0)))
-                        .then(
-                            Commands.argument("lift", doubleArg())
-                                .executes(
-                                    c ->
-                                        exec.run(
-                                            c,
-                                            new LaunchSpec.Forward(
-                                                getDouble(c, "power"), getDouble(c, "lift")))))))
+                    end(
+                        Commands.argument("power", doubleArg(0))
+                            .then(
+                                end(
+                                    Commands.argument("lift", doubleArg()),
+                                    exec,
+                                    (c, boost) ->
+                                        new LaunchSpec.Forward(
+                                            getDouble(c, "power"), getDouble(c, "lift"), boost))),
+                        exec,
+                        (c, boost) -> new LaunchSpec.Forward(getDouble(c, "power"), 0, boost))))
         .then(
             Commands.literal("to")
                 .then(
-                    Commands.argument("position", ArgumentTypes.finePosition(true))
-                        .executes(c -> exec.run(c, new LaunchSpec.To(target(c), 0)))
-                        .then(
-                            Commands.argument("ticks", integer(1, Ballistics.MAX_TICKS))
-                                .executes(
-                                    c ->
-                                        exec.run(
-                                            c,
-                                            new LaunchSpec.To(
-                                                target(c), getInteger(c, "ticks")))))));
+                    end(
+                        Commands.argument("position", ArgumentTypes.finePosition(true))
+                            .then(
+                                end(
+                                    Commands.argument("ticks", integer(1, Ballistics.MAX_TICKS)),
+                                    exec,
+                                    (c, boost) ->
+                                        new LaunchSpec.To(
+                                            target(c), getInteger(c, "ticks"), boost))),
+                        exec,
+                        (c, boost) -> new LaunchSpec.To(target(c), 0, boost))));
   }
 
   private static ArgumentBuilder<CommandSourceStack, ?> vector(Executor exec, boolean add) {
@@ -77,17 +87,21 @@ public final class SpecArguments {
         .then(
             Commands.argument("y", doubleArg())
                 .then(
-                    Commands.argument("z", doubleArg())
-                        .executes(
-                            c ->
-                                exec.run(
-                                    c,
-                                    new LaunchSpec.Velocity(
-                                        new Vector(
-                                            getDouble(c, "x"),
-                                            getDouble(c, "y"),
-                                            getDouble(c, "z")),
-                                        add)))));
+                    end(
+                        Commands.argument("z", doubleArg()),
+                        exec,
+                        (c, boost) ->
+                            new LaunchSpec.Velocity(
+                                new Vector(getDouble(c, "x"), getDouble(c, "y"), getDouble(c, "z")),
+                                add,
+                                boost))));
+  }
+
+  // Makes the node executable as it is and with a trailing `boost`.
+  private static <T extends ArgumentBuilder<CommandSourceStack, T>> T end(
+      T node, Executor exec, Spec spec) {
+    return node.executes(c -> exec.run(c, spec.make(c, false)))
+        .then(Commands.literal(BOOST).executes(c -> exec.run(c, spec.make(c, true))));
   }
 
   // The player lands in the target block: its y is rounded down to the block's floor, so a
